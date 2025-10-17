@@ -1,34 +1,39 @@
-import { CONFIG } from "./config";
-import { logProfit } from "./logger";
-import { getPrice } from "./pricefeed";
-import { executeCost, executeBuy } from "./trade";
+import { ArbitrageService } from "./service/ArbitrageService";
+import { Logger } from "./utils/logger";
 
-const runArbitrage = async () => {
-  console.log(`Starting Arbiting bot !`);
-  while (true) {
+async function main() {
+  Logger.info(`Arbitrage bot simulation starting...`);
+  const amountPerTrade = 1;
+  const minNetProfit = 0.02;
+  const service = new ArbitrageService(amountPerTrade, minNetProfit);
+
+  const intervalms = 3000;
+  Logger.info(
+    `Running scan every ${intervalms}ms. Amount per trade ${amountPerTrade} , Minimum net Profit ${minNetProfit}`
+  );
+
+  await service.checkOnce();
+
+  const timer = setInterval(async () => {
     try {
-      const price1 = await getPrice("Source 1");
-      const price2 = await getPrice("Source 2");
-      const diff = ((price2 - price1) / price1) * 100;
-      console.log(`Price Difference: ${diff.toFixed(2)}%`);
-
-      if (diff > CONFIG.profitThreshold * 100) {
-        console.log(`Arbitrage Opportunity found`);
-
-        const amount = 1;
-        const buy = await executeBuy(price1, amount);
-        const sell = await executeCost(price2, amount);
-
-        const profit = sell.revenue - buy.cost;
-        logProfit(profit);
-      } else {
-        console.log(`No Profitable`);
-      }
-      await new Promise((r) => setTimeout(r, CONFIG.refreshTime));
-    } catch (error) {
-      console.error(`Error in loop`, error);
+      await service.checkOnce();
+    } catch (err) {
+      Logger.error("Error durning checkonce:" + (err as Error).message);
     }
-  }
-};
+  }, intervalms);
+  process.on("SIGINT", () => {
+    Logger.info("Graceful shutdown requested (SIGINT).");
+    clearInterval(timer);
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    Logger.info("Graceful shutdown requested (SIGTERM).");
+    clearInterval(timer);
+    process.exit(0);
+  });
+}
 
-runArbitrage();
+main().catch((e) => {
+  Logger.error("Fatal error: " + (e as Error).message);
+  process.exit(1);
+});
